@@ -1,0 +1,5 @@
+bin.my
+/blib/*
+/Makefile
+/MYMETA.yml
+/MYMET.json
