@@ -13,6 +13,7 @@ my $receiver_count = 0;
 my $max_forks_per_task = 0;
 
 my $header_size = Local::TCP::Calc::HEADER_SIZE;
+my $len_msg_size = Local::TCP::Calc::LEN_MSG_SIZE;
 
 sub REAPER {
 	
@@ -53,7 +54,7 @@ sub start_server {
 				# Если все нормально отвечаем клиенту TYPE_CONN_OK() в противном случае TYPE_CONN_ERR()
 				my $header;
 				Local::TCP::Calc::pack_header(\$header, Local::TCP::Calc::TYPE_CONN_OK, 0);
-				syswrite $client, $pkg;
+				syswrite $client, $header;
 				
 				# В каждом форке читаем сообщение от клиента, анализируем его тип (TYPE_START_WORK(), TYPE_CHECK_WORK()) 
 				# Не забываем проверять количество прочитанных/записанных байт из/в сеть
@@ -65,18 +66,26 @@ sub start_server {
 				
 				given ($type) {
 					when (Local::TCP::Calc::TYPE_START_WORK) {
-						# Если необходимо добавляем задание в очередь (проверяем получилось или нет)
-						my $msg = pack 'I', $in_process;
-						Local::TCP::Calc::pack_header(\$header, 
-							Local::TCP::Calc::STATUS_NEW, length $msg);
-						syswrite $client, $pkg.$msg;
-						
-						for (my $i = 0; $i < $len; $i++) {
-							my $msg;
-							die 'Не удалось прочесть ' unless 
-								sysread($client, $msg, $header_size) == $header_size;
+						# Если необходимо добавляем задание в очередь (проверяем получилось или нет)						
+						my @tasks;
+						for (my $i = 0; $i < $size; $i++) {
+							my $len;
+							die 'Не удалось прочесть длину сообщения' unless 
+								sysread($client, $len, $len_msg_size) == $len_msg_size;
+							my ($pkg, $msg);
+							die 'Не удалось прочесть сообщение' unless 
+								sysread($client, $pkg, $len) == $len;
+							push @tasks, Local::TCP::Calc::unpack_message($pkg, \$msg);
 						}
 						
+						my $id = $q->add \@tasks
+						
+						my $msg = pack 'I', $id;
+						Local::TCP::Calc::pack_header(\$header, 
+							Local::TCP::Calc::STATUS_NEW, length $msg);
+						syswrite $client, $header.$msg;
+						
+						check_queue_workers $q
 					}
 					when (Local::TCP::Calc::TYPE_CHECK_WORK) {
 						# Если пришли с проверкой статуса, получаем статус из очереди и отдаём клиенту
@@ -84,10 +93,6 @@ sub start_server {
 						# После того, как результат передан на клиент зачищаем файл с результатом
 					}
 				}
-				
-				sysread $client, $len, 4;
-				sysread $client, $msg, $len;
-				
 				
 				close( $client );
 				exit;
@@ -106,13 +111,13 @@ sub start_server {
 sub check_queue_workers {
 	my $self = shift;
 	my $q = shift;
-	...
+	
 	# Функция в которой стартует обработчик задания
 	# Должна следить за тем, что бы кол-во обработчиков не превышало мексимально разрешённого ($max_worker)
 	# Но и простаивать обработчики не должны
-	# my $worker = Local::TCP::Calc::Server::Worker->new(...);
-	# $worker->start(...);
-	# $q->to_done ...
+	my $worker = Local::TCP::Calc::Server::Worker->new(...);
+	$worker->start(...);
+	$q->to_done ...
 }
 
 1;

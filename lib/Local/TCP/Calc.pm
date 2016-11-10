@@ -13,6 +13,7 @@ sub STATUS_DONE  {3}
 sub STATUS_ERROR {4}
 
 sub HEADER_SIZE {5}		# Размер заголовка
+sub LEN_MSG_SIZE {4}	# Размер длины сообщения
 
 sub pack_header {
 	my $pkg = shift;
