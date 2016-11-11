@@ -10,10 +10,22 @@ has f_handle       => (is => 'rw', isa => 'FileHandle');
 has queue_filename => (is => 'ro', isa => 'Str', default => '/tmp/local_queue.log');
 has max_task       => (is => 'rw', isa => 'Int', default => 0);
 
+my $proc;
+
 sub init {
 	my $self = shift;
-	
+	my &func = shift;
 	# Подготавливаем очередь к первому использованию если это необходимо
+	# Запускаем одельный процесс, обрабатывающий очередь
+	unless ($proc = fork) {
+		die "Can't fork: $!" unless defined $proc;
+		
+		while ( true ) {
+			&func($self);
+		}
+		exit;
+	}
+	
 }
 
 sub open {

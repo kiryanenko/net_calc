@@ -37,7 +37,7 @@ sub pack_message {
 	my $pkg = shift;
 	my $messages = shift;
 	
-	$$pkg = pack '(L/a*)*', $messages;
+	$$pkg = pack '(L/a*)*', @$messages;
 	return $$pkg;
 }
 
@@ -47,6 +47,16 @@ sub unpack_message {
 	
 	$$message = unpack 'a*', $pkg;
 	return $$message;
+}
+
+sub read_message {
+	my $r = shift;
+	
+	my $pkg;
+	die 'Не удалось прочесть длину сообщения' unless sysread($r, $pkg, LEN_MSG_SIZE) == LEN_MSG_SIZE;
+	my $len = unpack 'L', $pkg;
+	die 'Не удалось прочесть сообщение' unless sysread($r, $pkg, $len) == $len;
+	return unpack 'a*', $pkg;
 }
 
 1;

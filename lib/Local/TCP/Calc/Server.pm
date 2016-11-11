@@ -38,7 +38,7 @@ sub start_server {
 	# Инициализируем очередь my $q = Local::TCP::Calc::Server::Queue->new(...);
 	my $q = Local::TCP::Calc::Server::Queue->new();
   	
-	$q->init();
+	$q->init(\check_queue_workers);
 	
 	# Начинаем accept-тить подключения
 	while (my $client = $server->accept()) {
@@ -69,13 +69,7 @@ sub start_server {
 						# Если необходимо добавляем задание в очередь (проверяем получилось или нет)						
 						my @tasks;
 						for (my $i = 0; $i < $size; $i++) {
-							my $len;
-							die 'Не удалось прочесть длину сообщения' unless 
-								sysread($client, $len, $len_msg_size) == $len_msg_size;
-							my ($pkg, $msg);
-							die 'Не удалось прочесть сообщение' unless 
-								sysread($client, $pkg, $len) == $len;
-							push @tasks, Local::TCP::Calc::unpack_message($pkg, \$msg);
+							push @tasks, Local::TCP::Calc::read_message($client);
 						}
 						
 						my $id = $q->add \@tasks
@@ -84,13 +78,31 @@ sub start_server {
 						Local::TCP::Calc::pack_header(\$header, 
 							Local::TCP::Calc::STATUS_NEW, length $msg);
 						syswrite $client, $header.$msg;
-						
-						check_queue_workers $q
 					}
 					when (Local::TCP::Calc::TYPE_CHECK_WORK) {
 						# Если пришли с проверкой статуса, получаем статус из очереди и отдаём клиенту
-						# В случае если статус DONE или ERROR возвращаем на клиент содержимое файла с результатом выполнения
-						# После того, как результат передан на клиент зачищаем файл с результатом
+						my $pkg;
+						die 'Не удалось прочесть длину сообщения' unless 
+								sysread($client, $pkg, $size) == $size;
+						my $id = unpack 'I', $pkg;
+						
+						my ($status, $msg) = $q->get_status $id;
+						given ($status) {
+							when ([Local::TCP::Calc::STATUS_NEW, Local::TCP::Calc::STATUS_WORK]) {
+								my $pkg = pack 'L', $msg;
+								Local::TCP::Calc::pack_header(\$header, $status, length $pkg);
+								syswrite $client, $header.$pkg;
+							}
+							when ([Local::TCP::Calc::STATUS_DONE, Local::TCP::Calc::STATUS_ERROR]) {
+								# В случае если статус DONE или ERROR возвращаем на клиент содержимое файла с результатом выполнения
+								my $pkg;
+								Local::TCP::Calc::pack_message(\$pkg, $msg);
+								Local::TCP::Calc::pack_header(\$header, $status, scalar @$msg);
+								syswrite $client, $header.$pkg;
+								# После того, как результат передан на клиент зачищаем файл с результатом
+							
+							}
+						}
 					}
 				}
 				
@@ -110,14 +122,14 @@ sub start_server {
 
 sub check_queue_workers {
 	my $self = shift;
-	my $q = shift;
+	#my $q = shift;
 	
 	# Функция в которой стартует обработчик задания
 	# Должна следить за тем, что бы кол-во обработчиков не превышало мексимально разрешённого ($max_worker)
 	# Но и простаивать обработчики не должны
 	my $worker = Local::TCP::Calc::Server::Worker->new(...);
 	$worker->start(...);
-	$q->to_done ...
+	$self->to_done
 }
 
 1;
