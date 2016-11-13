@@ -12,51 +12,95 @@ sub STATUS_WORK  {2}
 sub STATUS_DONE  {3}
 sub STATUS_ERROR {4}
 
-sub HEADER_SIZE {5}		# Размер заголовка
-sub LEN_MSG_SIZE {4}	# Размер длины сообщения
-
-sub pack_header {
-	my $pkg = shift;
+sub input {
+	my $w = shift;
 	my $type = shift;
-	my $size = shift;	
+	my $pkg_ref = shift;
 	
-	$$pkg = pack 'CL', $type, $size;	
-	return $$pkg;
+	syswrite($w, pack('C', $type)) == 1;
+	syswrite($w, $$pkg_ref);
 }
 
-sub unpack_header {
-	my $pkg = shift;
-	my $header = shift;	# Размер или количество сообщений
+sub read_type {
+	my $r = shift;
 	
-	my @h = unpack 'CL', $pkg;
-	$$header = @h[1];
-	return @h[0];		# Возвращаем тип
+	my $pkg;
+	#while (sysread($r, $pkg, 1) == 0) {}
+	die 'Не удалось прочесть тип подключения' unless sysread($r, $pkg, 1) == 1;
+	return unpack 'C', $pkg;
 }
 
 sub pack_message {
-	my $pkg = shift;
-	my $messages = shift;
-	
-	$$pkg = pack '(L/a*)*', @$messages;
-	return $$pkg;
-}
-
-sub unpack_message {
-	my $pkg = shift;
 	my $message = shift;
-	
-	$$message = unpack 'a*', $pkg;
-	return $$message;
+	return pack 'L/a*', $message;
 }
 
 sub read_message {
 	my $r = shift;
 	
 	my $pkg;
-	die 'Не удалось прочесть длину сообщения' unless sysread($r, $pkg, LEN_MSG_SIZE) == LEN_MSG_SIZE;
+	die 'Не удалось прочесть длину сообщения' unless sysread($r, $pkg, 4) == 4;
 	my $len = unpack 'L', $pkg;
 	die 'Не удалось прочесть сообщение' unless sysread($r, $pkg, $len) == $len;
 	return unpack 'a*', $pkg;
+}
+
+sub pack_messages {
+	my $messages = shift;
+	
+	my $pkg = pack 'I', scalar @$messages;
+	for (@$messages) { $pkg .= pack_message($_); }
+	return $pkg;
+}
+
+sub read_messages {
+	my $r = shift;
+	
+	my $pkg;
+	die 'Не удалось прочесть количество сообщений' unless sysread($r, $pkg, 2) == 2;
+	my $n = unpack 'I', $pkg;
+	my @messages;
+	for (my $i = 0; $i < $n; $i++) { push @messages, read_message($r) }
+	return \@messages;
+}
+
+sub pack_id {
+	my $id = shift;
+	return pack 'L', $id;
+}
+
+sub read_id {
+	my $r = shift;
+	
+	my $pkg;
+	die 'Не удалось прочесть id' unless sysread($r, $pkg, 4) == 4;
+	return unpack 'L', $pkg;
+}
+
+sub pack_time {
+	my $time = shift;
+	return pack 'L', $time;
+}
+
+sub read_time {
+	my $r = shift;
+	
+	my $pkg;
+	die 'Не удалось прочесть время' unless sysread($r, $pkg, 4) == 4;
+	return unpack 'L', $pkg;
+}
+
+sub pack_status {
+	my $status = shift;
+	return pack 'С', $status;
+}
+
+sub read_status {
+	my $r = shift;
+	
+	my $pkg;
+	die 'Не удалось прочесть статус' unless sysread($r, $pkg, 1) == 1;
+	return unpack 'С', $pkg;
 }
 
 1;
