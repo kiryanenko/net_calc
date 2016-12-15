@@ -1,4 +1,5 @@
 package Local::TCP::Calc;
+use DDP;
 
 use strict;
 
@@ -17,8 +18,8 @@ sub input {
 	my $type = shift;
 	my $pkg_ref = shift;
 	
-	syswrite($w, pack('C', $type)) == 1;
-	syswrite($w, $$pkg_ref);
+	syswrite($w, pack('C', $type));
+	syswrite($w, $$pkg_ref) if $pkg_ref;
 }
 
 sub read_type {
@@ -26,7 +27,9 @@ sub read_type {
 	
 	my $pkg;
 	#while (sysread($r, $pkg, 1) == 0) {}
-	die 'Не удалось прочесть тип подключения' unless sysread($r, $pkg, 1) == 1;
+	my $a = sysread($r, $pkg, 1);
+	die "___undef___________ $$ ___________$!" unless defined $a;
+	die "$a $pkg Не  удалось прочесть тип подключения " unless $a == 1;
 	return unpack 'C', $pkg;
 }
 
@@ -47,8 +50,7 @@ sub read_message {
 
 sub pack_messages {
 	my $messages = shift;
-	
-	my $pkg = pack 'I', scalar @$messages;
+	my $pkg = pack 'L', scalar @$messages;
 	for (@$messages) { $pkg .= pack_message($_); }
 	return $pkg;
 }
@@ -57,8 +59,8 @@ sub read_messages {
 	my $r = shift;
 	
 	my $pkg;
-	die 'Не удалось прочесть количество сообщений' unless sysread($r, $pkg, 2) == 2;
-	my $n = unpack 'I', $pkg;
+	die 'Не удалось прочесть количество сообщений' unless sysread($r, $pkg, 4) == 4;
+	my $n = unpack 'L', $pkg;
 	my @messages;
 	for (my $i = 0; $i < $n; $i++) { push @messages, read_message($r) }
 	return \@messages;
@@ -73,7 +75,10 @@ sub read_id {
 	my $r = shift;
 	
 	my $pkg;
-	die 'Не удалось прочесть id' unless sysread($r, $pkg, 4) == 4;
+
+	my $a = sysread($r, $pkg, 4);
+warn "__ ___read_id____ $$ __________" unless defined $a;
+	die 'Не удалось прочесть id' unless $a == 4;
 	return unpack 'L', $pkg;
 }
 

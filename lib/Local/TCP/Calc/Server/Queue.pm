@@ -46,7 +46,7 @@ sub open {
 		$/ = undef;
 	  	my $json = <$fh>;
 		$/ = "\n";
-		
+#p $json;
 		return JSON::XS::decode_json($json);
     }
 }
@@ -58,9 +58,8 @@ sub close {
 	# Перезаписываем файл с данными очереди (если требуется), снимаем лок, закрываем файл.
 	if (defined $struct) {
 		seek $fh, 0, 0;
-warn "___________close___________";
-p $struct;
 		print $fh JSON::XS::encode_json($struct);
+		truncate($fh, tell($fh));
 	}
 	close $fh;
 }
@@ -73,12 +72,12 @@ sub find_and_set {
 	my $res;
 	my $queue = $self->open('+<');
 	for (@$queue) {
-		if ($_{id} == $id) {
+		if ($_->{id} == $id) {
 			$res = &$func(\$_);
 			last;
 		}
 	}
-	$self->close(@$queue);
+	$self->close($queue);
 	return $res;
 }
 
@@ -164,9 +163,9 @@ sub get {
 	my ($id, $tasks);
 	my $queue = $self->open('<');
 	for (@$queue) {
-		if ($_{status} == Local::TCP::Calc::STATUS_NEW) {
-			$id = $_{id};
-			$tasks = $_{tasks};
+		if ($_->{status} == Local::TCP::Calc::STATUS_NEW) {
+			$id = $_->{id};
+			$tasks = $_->{tasks};
 			last;
 		}
 	}
@@ -179,18 +178,17 @@ sub add {
 	my $new_work = shift;
 	
 	# Добавляем новое задание с проверкой, что очередь не переполнилась
-	my @queue = $self->open('+<');
-	return if scalar(@queue) > $self->max_task;
-	my $id = @queue[scalar(@queue)-1] if @queue;
-	push @queue, { 
+	my $queue = $self->open('+<');
+
+	return if scalar(@$queue) + 1 > $self->max_task;
+	my $id = $$queue[scalar(@$queue)-1] if scalar(@$queue);
+	push @$queue, { 
 		id => ++$id, 
 		tasks => @$new_work, 
 		status => Local::TCP::Calc::STATUS_NEW(),
 		'time' => time
 	};
-
-p @queue;
-	$self->close(@queue);
+	$self->close($queue);
 	return $id;
 }
 

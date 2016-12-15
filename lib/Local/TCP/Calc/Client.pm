@@ -13,15 +13,12 @@ BEGIN{
 }
 no warnings 'experimental';
 
-my $myport;
-
 sub set_connect {
 	my $pkg = shift;
 	my $ip = shift;
 	my $port = shift;
 	
-$myport = $port;
-
+	
 	# read header before read message
 	# check on Local::TCP::Calc::TYPE_CONN_ERR();
 	my $server = IO::Socket::INET->new(
@@ -29,8 +26,10 @@ $myport = $port;
 		PeerPort => $port,
 		Proto => "tcp",
 		Type => SOCK_STREAM
-	) or die "Can`t connect $!";
-	
+	) or die "Ошибка подключения $!";
+	if (Local::TCP::Calc::read_type($server) == Local::TCP::Calc::TYPE_CONN_ERR) {
+		die "Ошибка: " . Local::TCP::Calc::read_message($server);
+	}
 	return $server;
 }
 
@@ -39,7 +38,8 @@ sub do_request {
 	my $server = shift;
 	my $type = shift;
 	my $messages = shift;
-
+	my @res;
+	return 0 unless $server and $server->connected;
 	# Проверить, что записанное/прочитанное количество байт равно длинне сообщения/заголовка
 	# Принимаем и возвращаем перловые структуры
 	my $msg;
@@ -47,32 +47,31 @@ sub do_request {
 		when (Local::TCP::Calc::TYPE_START_WORK) { $msg = Local::TCP::Calc::pack_messages($messages); }
 		when (Local::TCP::Calc::TYPE_CHECK_WORK) { $msg = Local::TCP::Calc::pack_id($messages); }
 	}
-warn "___________Отправил___________";
 	Local::TCP::Calc::input( $server, $type, \$msg );
-	my $result;
+	
 	if (Local::TCP::Calc::read_type($server) == Local::TCP::Calc::TYPE_CONN_OK) {
 		given ($type) {
 			when (Local::TCP::Calc::TYPE_START_WORK) { 
-				$result = Local::TCP::Calc::read_id $server; 
+				push @res, Local::TCP::Calc::read_id $server; 
 			}
 			when (Local::TCP::Calc::TYPE_CHECK_WORK) { 
 				my $status = $msg = Local::TCP::Calc::read_status $server;
 				given ($status) {
 					when ([Local::TCP::Calc::STATUS_NEW(), Local::TCP::Calc::STATUS_WORK()]) {
-						$result = Local::TCP::Calc::read_time $server;
+						push @res, Local::TCP::Calc::read_time $server;
 					}
 					when ([Local::TCP::Calc::STATUS_DONE(), Local::TCP::Calc::STATUS_ERROR()]) {
-						$result = Local::TCP::Calc::read_messages $server;
+						push @res, Local::TCP::Calc::read_messages $server;
 					}
 				}
 			}
 		}
 	} else {
-		$result = Local::TCP::Calc::read_message $server;
+		return 0;
 	}
 	close $server;
 	
-	return $result;
+	return @res;
 }
 
 1;

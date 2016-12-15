@@ -6,7 +6,7 @@ use Mouse;
 use Local::TCP::Calc;
 use JSON::XS;
 use POSIX;
-use IO::Socket;
+use IO::Socket::INET;
 
 use 5.010;
 BEGIN{
@@ -30,8 +30,8 @@ sub write_err {
 	my $error = shift;
 	
 	# Записываем ошибку возникшую при выполнении задания
-	$self->error = 1;
-	write_res $i, $error;
+	$self->error(1);
+	$self->write_res($i, $error);
 }
 
 sub write_res {
@@ -44,6 +44,7 @@ sub write_res {
 	flock($fh, 2);
 	$/ = undef;
 	my $json = <$fh>;
+	$/ = "\n";
 	my $results = JSON::XS::decode_json($json);
 	$results->{$i} = $res;
 	seek $fh, 0, 0;
@@ -69,9 +70,7 @@ sub child_fork {
 sub start {
 	my $self = shift;
 	my $tasks = shift;
-	my $port = shift;
 	
-	my $i = 0;
 	$SIG{CHLD} = $self->child_fork;
 	
 	# Создаю пустой filename
@@ -81,23 +80,24 @@ sub start {
 
 	# Создаю соккет через который дочерние процессы будут связываться с родителем
 	my $server = IO::Socket::INET->new(
-		LocalPort => $port,
 		Type      => SOCK_STREAM,
 		ReuseAddr => 1,
-		Listen    => 10) 
-	or die "Can't create server on port $port : $@ $/";
+		Listen    => 10
+	) or die "Can't create server on port : $@ $/";
+	my $port = $server->sockport();
 
 	# Начинаем выполнение задания. Форкаемся на нужное кол-во форков для обработки массива примеров
-	for (; $i < $self->max_forks && $i < scalar @$tasks; $i++) {
+	for (my $i = 0; $i < $self->max_forks && $i < scalar @$tasks; $i++) {
 		if (my $pid = fork()) {
+warn "__pid_ $pid";
 			$self->forks->{$pid} = $pid;
 		} else {
 			die "Cannot fork $!" unless defined $pid;
 			# Дочерний процесс
 			close $server;
 		
-			my $socket = IO::Socket::INET->new(		# Подключаюсь к родителю
-				PeerAddr => 'localhost',
+			my $socket = IO::Socket::INET->new(
+				PeerAddr => '127.0.0.1',
 				PeerPort => $port,
 				Proto => "tcp",
 				Type => SOCK_STREAM
@@ -107,18 +107,19 @@ sub start {
 				eval {
 					# Читаю задачу от родителя
 					my $i = Local::TCP::Calc::read_id $socket;
+warn "______id $i $$ ________";
 					my $ex = Local::TCP::Calc::read_message $socket;
 			
 					my $res = $self->calc_ref($ex);
 					# В форках записываем результат в файл, не забываем про локи, чтобы форки друг другу не портили результат
-					write_res $i, $res;
+					$self->write_res($i, $res);
 				1} or do { 
-					write_err $i, $!;
+					$self->write_err($i, $!);
 				};
 						
 				close $socket;					
-				$socket = IO::Socket::INET->new(	# Подключаюсь к родителю
-					PeerAddr => 'localhost',
+				$socket = IO::Socket::INET->new(
+					PeerAddr => '127.0.0.1',
 					PeerPort => $port,
 					Proto => "tcp",
 					Type => SOCK_STREAM
@@ -130,16 +131,26 @@ sub start {
 	
 	# Отправляю детям задачи
 	my $n = scalar @$tasks;
-	for( my $i = 0; $i < $n and my $client = $server->accept(); $i++ ) {
-		my $child = fork();
+	my $i = 0;
+	while ( $i < $n ) {
+		my $client = $server->accept();
+        if (!$client) {
+            next if $! == EINTR;
+            warn "ERROR ?? -> $$";
+            last;
+        }
+        my $child = fork();
 		if ($child) { 
+			$i++;
+			p $i;
 			close ($client); next;
 		}
-		if (defined $child) {
+		elsif (defined $child) {
 			close($server);
 			$client->autoflush(1);
+warn "___print id $i _____";
 			syswrite $client, Local::TCP::Calc::pack_id($i);
-			syswrite $client, Local::TCP::Calc::pack_message(@$tasks[$i]);
+			syswrite $client, Local::TCP::Calc::pack_message($$tasks[$i]);
 			close( $client );
 			exit;
 		} else { die "Can't fork: $!"; }
