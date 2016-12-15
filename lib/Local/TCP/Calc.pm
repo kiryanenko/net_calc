@@ -77,6 +77,7 @@ sub read_id {
 	my $pkg;
 
 	my $a = sysread($r, $pkg, 4);
+p $r;
 warn "__ ___read_id____ $$ __________" unless defined $a;
 	die 'Не удалось прочесть id' unless $a == 4;
 	return unpack 'L', $pkg;

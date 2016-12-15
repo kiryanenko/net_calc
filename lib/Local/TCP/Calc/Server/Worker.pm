@@ -7,6 +7,7 @@ use Local::TCP::Calc;
 use JSON::XS;
 use POSIX;
 use IO::Socket::INET;
+use DDP;
 
 use 5.010;
 BEGIN{
@@ -107,9 +108,9 @@ warn "__pid_ $pid";
 				eval {
 					# Читаю задачу от родителя
 					my $i = Local::TCP::Calc::read_id $socket;
-warn "______id $i $$ ________";
+
 					my $ex = Local::TCP::Calc::read_message $socket;
-			
+warn "______id $i $$ ___ $ex _____";	
 					my $res = $self->calc_ref($ex);
 					# В форках записываем результат в файл, не забываем про локи, чтобы форки друг другу не портили результат
 					$self->write_res($i, $res);
@@ -117,19 +118,23 @@ warn "______id $i $$ ________";
 					$self->write_err($i, $!);
 				};
 						
-				close $socket;					
+				close $socket;
+				$socket = undef;				
 				$socket = IO::Socket::INET->new(
 					PeerAddr => '127.0.0.1',
 					PeerPort => $port,
 					Proto => "tcp",
 					Type => SOCK_STREAM
 				);
+warn "_______ddddddddddddddddddd____$$ ______" if $socket;
+p $socket;
 			}
 			exit;
 		}
 	}
 	
 	# Отправляю детям задачи
+p $tasks;
 	my $n = scalar @$tasks;
 	my $i = 0;
 	while ( $i < $n ) {
@@ -142,7 +147,7 @@ warn "______id $i $$ ________";
         my $child = fork();
 		if ($child) { 
 			$i++;
-			p $i;
+p $i;
 			close ($client); next;
 		}
 		elsif (defined $child) {
