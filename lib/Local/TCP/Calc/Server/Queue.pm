@@ -73,7 +73,7 @@ sub find_and_set {
 	my $queue = $self->open('+<');
 	for (@$queue) {
 		if ($_->{id} == $id) {
-			$res = &$func(\$_);
+			$res = &$func($_);
 			last;
 		}
 	}
@@ -87,7 +87,7 @@ sub to_done {
 	my $file_name = shift;
 	
 	# Переводим задание в статус DONE, сохраняем имя файла с резуьтатом работы
-	$self->find_and_set( $id, \sub {
+	$self->find_and_set( $id, sub {
 		my $el = shift;
 		$el->{status} = Local::TCP::Calc::STATUS_DONE;
 		$el->{file_name} = $file_name;	
@@ -100,7 +100,7 @@ sub to_err {
 	my $file_name = shift;
 	
 	# Переводим задание в статус DONE, сохраняем имя файла с резуьтатом работы
-	$self->find_and_set( $id, \sub {
+	$self->find_and_set( $id, sub {
 		my $el = shift;
 		$el->{status} = Local::TCP::Calc::STATUS_ERR();
 		$el->{file_name} = $file_name;	
@@ -110,9 +110,8 @@ sub to_err {
 sub to_work {
 	my $self = shift;
 	my $id = shift;
-	
 	# Переводим задание в статус DONE, сохраняем имя файла с резуьтатом работы
-	$self->find_and_set( $id, \sub {
+	$self->find_and_set( $id, sub {
 		my $el = shift;
 		$el->{status} = Local::TCP::Calc::STATUS_WORK;
 		$el->{'time'} = time;	
@@ -124,7 +123,7 @@ sub get_status {
 	my $id = shift;
 	
 	# Возвращаем статус задания по id, и в случае DONE или ERROR имя файла с результатом
-	my ($status, $msg) = $self->find_and_set( $id, \sub {
+	my $res = $self->find_and_set( $id, sub {
 		my $el = shift;
 		my $status = $el->{status};
 		my $msg;
@@ -136,9 +135,9 @@ sub get_status {
 				$msg = $el->{file_name};
 			}
 		}
-		return ($status, $msg);
+		return [$status, $msg];
 	});
-	return ($status, $msg);
+	return @$res;
 }
 
 sub delete {
@@ -149,7 +148,7 @@ sub delete {
 	my $queue = $self->open('+<');
 	for (my $i = 0; $i < scalar @$queue; $i++) {
 		if ($$queue[$i]{id} == $id) {
-			delete $$queue[$i];
+			splice(@$queue, $i, 1);
 			last;
 		}
 	}
@@ -179,11 +178,12 @@ sub add {
 	
 	# Добавляем новое задание с проверкой, что очередь не переполнилась
 	my $queue = $self->open('+<');
+	my $cnt = scalar(@$queue);
 
-	return if scalar(@$queue) + 1 > $self->max_task;
-	my $id = $$queue[scalar(@$queue)-1] if scalar(@$queue);
+	return if $cnt + 1 > $self->max_task;
+	my $id = $cnt > 0 ? $$queue[$cnt-1]{id} + 1 : 1;
 	push @$queue, { 
-		id => ++$id, 
+		id => $id, 
 		tasks => @$new_work, 
 		status => Local::TCP::Calc::STATUS_NEW(),
 		'time' => time

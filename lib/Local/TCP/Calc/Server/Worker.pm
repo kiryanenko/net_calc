@@ -8,6 +8,7 @@ use JSON::XS;
 use POSIX;
 use IO::Socket::INET;
 use DDP;
+use Fcntl qw (:flock);
 
 use 5.010;
 BEGIN{
@@ -39,10 +40,11 @@ sub write_res {
 	my $self = shift;
 	my $i = shift;
 	my $res = shift;
-	
+
+
 	# Записываем результат выполнения задания
 	open(my $fh, '+<', $self->filename) or die "Can't open +< ".$self->filename.": $!";
-	flock($fh, 2);
+	flock($fh, LOCK_EX) or die "can't flock: $!";
 	$/ = undef;
 	my $json = <$fh>;
 	$/ = "\n";
@@ -50,6 +52,7 @@ sub write_res {
 	$results->{$i} = $res;
 	seek $fh, 0, 0;
 	print $fh JSON::XS::encode_json($results);
+	truncate($fh, tell($fh));
 	close $fh;
 }
 
@@ -61,8 +64,11 @@ sub child_fork {
 		last if $pid == -1;
 		if( WIFEXITED($?) ){
 			if ($? > 0) {
-				$self->error = 1;
-				for (keys $self->forks) { system("kill $_"); }				
+				$self->error(1);
+				for (keys $self->forks) { 
+					system("kill $_"); 
+					delete $self->forks->{$_};	
+				}				
 			}
 		}
 	}
@@ -72,99 +78,42 @@ sub start {
 	my $self = shift;
 	my $tasks = shift;
 	
+	my $cnt = scalar @$tasks;
+	
 	$SIG{CHLD} = $self->child_fork;
 	
 	# Создаю пустой filename
 	open(my $fh, '>', $self->filename) or die "Can't open > ".$self->filename.": $!";
 	print $fh JSON::XS::encode_json({});
 	close $fh;
-
-	# Создаю соккет через который дочерние процессы будут связываться с родителем
-	my $server = IO::Socket::INET->new(
-		Type      => SOCK_STREAM,
-		ReuseAddr => 1,
-		Listen    => 10
-	) or die "Can't create server on port : $@ $/";
-	my $port = $server->sockport();
-
+	
+	# расчитываем сколько заданий приходится на 1 обработчик
+    my $cnt_per_proc = Local::TCP::Calc::ceil(1.0 * $cnt / $self->max_forks);
 	# Начинаем выполнение задания. Форкаемся на нужное кол-во форков для обработки массива примеров
-	for (my $i = 0; $i < $self->max_forks && $i < scalar @$tasks; $i++) {
+	for (my $i = 0; $i < $self->max_forks && $i < $cnt; $i++) {
 		if (my $pid = fork()) {
-warn "__pid_ $pid";
 			$self->forks->{$pid} = $pid;
 		} else {
 			die "Cannot fork $!" unless defined $pid;
 			# Дочерний процесс
-			close $server;
-		
-			my $socket = IO::Socket::INET->new(
-				PeerAddr => '127.0.0.1',
-				PeerPort => $port,
-				Proto => "tcp",
-				Type => SOCK_STREAM
-			);
-			
-			while ($socket) {
-				eval {
-					# Читаю задачу от родителя
-					my $i = Local::TCP::Calc::read_id $socket;
-
-					my $ex = Local::TCP::Calc::read_message $socket;
-warn "______id $i $$ ___ $ex _____";	
-					my $res = $self->calc_ref($ex);
+			for (my $j = $i * $cnt_per_proc; ($j < $cnt_per_proc * ($i + 1)) && ($j < $cnt); $j++) {
+				my $ex = $$tasks[$j];
+				eval {					
+					my $res = $self->calc_ref->($ex);
 					# В форках записываем результат в файл, не забываем про локи, чтобы форки друг другу не портили результат
-					$self->write_res($i, $res);
+					$self->write_res($j, "$ex == $res");
 				1} or do { 
-					$self->write_err($i, $!);
+					$self->write_err($j, "$ex == NaN");
 				};
-						
-				close $socket;
-				$socket = undef;				
-				$socket = IO::Socket::INET->new(
-					PeerAddr => '127.0.0.1',
-					PeerPort => $port,
-					Proto => "tcp",
-					Type => SOCK_STREAM
-				);
-warn "_______ddddddddddddddddddd____$$ ______" if $socket;
-p $socket;
 			}
 			exit;
 		}
 	}
-	
-	# Отправляю детям задачи
-p $tasks;
-	my $n = scalar @$tasks;
-	my $i = 0;
-	while ( $i < $n ) {
-		my $client = $server->accept();
-        if (!$client) {
-            next if $! == EINTR;
-            warn "ERROR ?? -> $$";
-            last;
-        }
-        my $child = fork();
-		if ($child) { 
-			$i++;
-p $i;
-			close ($client); next;
-		}
-		elsif (defined $child) {
-			close($server);
-			$client->autoflush(1);
-warn "___print id $i _____";
-			syswrite $client, Local::TCP::Calc::pack_id($i);
-			syswrite $client, Local::TCP::Calc::pack_message($$tasks[$i]);
-			close( $client );
-			exit;
-		} else { die "Can't fork: $!"; }
-	}
-	close $server;
 	# Вызов блокирующий, ждём  пока не завершатся все форки
-	while (waitpid(-1, 0)) {}
+	while ( my $pid = waitpid(-1, 0) ) { last if $pid == -1; }
 	return $self->error;
 }
+
 
 no Mouse;
 __PACKAGE__->meta->make_immutable();

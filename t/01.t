@@ -6,6 +6,7 @@ use Local::TCP::Calc;
 use Local::TCP::Calc::Client;
 use Local::TCP::Calc::Server;
 use Data::Dumper;
+use DDP;
 
 my $server_test = Test::TCP->new(
 	code => sub {

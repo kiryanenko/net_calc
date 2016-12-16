@@ -26,10 +26,7 @@ sub read_type {
 	my $r = shift;
 	
 	my $pkg;
-	#while (sysread($r, $pkg, 1) == 0) {}
-	my $a = sysread($r, $pkg, 1);
-	die "___undef___________ $$ ___________$!" unless defined $a;
-	die "$a $pkg Не  удалось прочесть тип подключения " unless $a == 1;
+	die "Не удалось прочесть тип подключения " unless sysread($r, $pkg, 1) == 1;
 	return unpack 'C', $pkg;
 }
 
@@ -75,11 +72,7 @@ sub read_id {
 	my $r = shift;
 	
 	my $pkg;
-
-	my $a = sysread($r, $pkg, 4);
-p $r;
-warn "__ ___read_id____ $$ __________" unless defined $a;
-	die 'Не удалось прочесть id' unless $a == 4;
+	die 'Не удалось прочесть id' unless sysread($r, $pkg, 4) == 4;
 	return unpack 'L', $pkg;
 }
 
@@ -98,7 +91,7 @@ sub read_time {
 
 sub pack_status {
 	my $status = shift;
-	return pack 'С', $status;
+	return pack 'C', $status;
 }
 
 sub read_status {
@@ -106,7 +99,12 @@ sub read_status {
 	
 	my $pkg;
 	die 'Не удалось прочесть статус' unless sysread($r, $pkg, 1) == 1;
-	return unpack 'С', $pkg;
+	return unpack 'C', $pkg;
+}
+
+sub ceil($) { 
+  	my $x = shift;
+	return int($x) < $x ? int($x)+1 : $x
 }
 
 1;

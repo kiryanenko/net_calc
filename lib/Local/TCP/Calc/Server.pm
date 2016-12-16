@@ -82,52 +82,52 @@ sub start_server {
 					# В каждом форке читаем сообщение от клиента, анализируем его тип (TYPE_START_WORK(), TYPE_CHECK_WORK()) 
 					# Не забываем проверять количество прочитанных/записанных байт из/в сеть
 					my $type = Local::TCP::Calc::read_type($client);
-					given ($type) {
-						when (Local::TCP::Calc::TYPE_START_WORK) {
+					if ($type == Local::TCP::Calc::TYPE_START_WORK) {
 							# Если необходимо добавляем задание в очередь (проверяем получилось или нет)						
 							my @tasks = Local::TCP::Calc::read_messages($client);
 							my $id = $q->add(\@tasks);
 							die "Очередь переполнена" unless defined $id;
 							check_queue_workers($q);
 							$result = Local::TCP::Calc::pack_id($id);
-						}
-						when (Local::TCP::Calc::TYPE_CHECK_WORK) {
-							# Если пришли с проверкой статуса, получаем статус из очереди и отдаём клиенту
-							my $id = Local::TCP::Calc::read_id $client;
-							my ($status, $msg) = $q->get_status($id);
-							
-							$result = Local::TCP::Calc::pack_status $status;
-							given ($status) {
-								when ([Local::TCP::Calc::STATUS_NEW(), Local::TCP::Calc::STATUS_WORK()]) {
-									$result .= Local::TCP::Calc::pack_time $msg;
-								}
-								when ([Local::TCP::Calc::STATUS_DONE(), Local::TCP::Calc::STATUS_ERROR()]) {
-									# В случае если статус DONE или ERROR возвращаем на клиент содержимое файла с результатом выполнения
-									open(my $fh, '<', $msg) or die "Can't open < $msg: $!";
-									$/ = undef;
-									my $json = <$fh>;
-									$/ = "\n";
-									my %answers = JSON::XS::decode_json($json);
-									close $fh;
-									
-									my @res;
-									while (my ($key, $value) = each %answers) {
-										$res[$key] = $value;
-									}
-									
-									$result .= Local::TCP::Calc::pack_messages \@res;
-									# После того, как результат передан на клиент зачищаем файл с результатом
-									$q->delete($id);
-									unlink($msg);
-								}
-								default { die "Неизвестная ошибка статуса" }
-							}
-						}
-						default { die "Неизвестный тип подключения" }
 					}
+					elsif ($type == Local::TCP::Calc::TYPE_CHECK_WORK) {
+						# Если пришли с проверкой статуса, получаем статус из очереди и отдаём клиенту
+						my $id = Local::TCP::Calc::read_id $client;
+
+						my ($status, $msg) = $q->get_status($id);
+						die "Для id $id записи не найдены" unless defined $status;
+						
+						$result = Local::TCP::Calc::pack_status $status;
+						given ($status) {
+							when ([Local::TCP::Calc::STATUS_NEW(), Local::TCP::Calc::STATUS_WORK()]) {
+								$result .= Local::TCP::Calc::pack_time $msg;
+							}
+							when ([Local::TCP::Calc::STATUS_DONE(), Local::TCP::Calc::STATUS_ERROR()]) {
+								# В случае если статус DONE или ERROR возвращаем на клиент содержимое файла с результатом выполнения
+								open(my $fh, '<', $msg) or die "Can't open < $msg: $!";
+								$/ = undef;
+								my $json = <$fh>;
+								$/ = "\n";
+								my $answers = JSON::XS::decode_json($json);
+								close $fh;
+
+								my @res;
+								while (my ($key, $value) = each %$answers) {
+									$res[$key] = $value;
+								}
+								$result .= Local::TCP::Calc::pack_messages \@res;
+								# После того, как результат передан на клиент зачищаем файл с результатом
+								$q->delete($id);
+								unlink($msg);
+							}
+							default { die "Неизвестная ошибка статуса" }
+						}
+					}
+					else { die "Неизвестный тип подключения" }
+				
 					# Если все нормально отвечаем клиенту TYPE_CONN_OK() в противном случае TYPE_CONN_ERR()
-warn "_________mes________";
-p $result;
+#warn "_________mes________";
+#p $result;
 					Local::TCP::Calc::input( $client, Local::TCP::Calc::TYPE_CONN_OK(), \$result );
 				} else { die "Can't fork: $!"; }
 			} else {
@@ -136,13 +136,12 @@ p $result;
 			}
 		1} or do { 
 			my $msg = Local::TCP::Calc::pack_message("Error: $@");
-p $msg;
+#p $msg;
 			Local::TCP::Calc::input( $client, Local::TCP::Calc::TYPE_CONN_ERR(), \$msg );
 		};
 		close ($client);
 		exit unless $child;
 	}
-warn "_________stop_______ssssssssssssssssssssssssss___$port _____";
 }
 
 sub check_queue_workers {
@@ -168,7 +167,7 @@ sub check_queue_workers {
 					filename => $filename
 				);
 
-				$q->to_work($tasks);
+				$q->to_work($id);
 	
 				if ($worker->start($tasks)) { $q->to_err($id, $filename);} 
 				else { $q->to_done($id, $filename); }

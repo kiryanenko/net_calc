@@ -43,26 +43,25 @@ sub do_request {
 	# Проверить, что записанное/прочитанное количество байт равно длинне сообщения/заголовка
 	# Принимаем и возвращаем перловые структуры
 	my $msg;
-	given ($type) {
-		when (Local::TCP::Calc::TYPE_START_WORK) { $msg = Local::TCP::Calc::pack_messages($messages); }
-		when (Local::TCP::Calc::TYPE_CHECK_WORK) { $msg = Local::TCP::Calc::pack_id($messages); }
-	}
-	Local::TCP::Calc::input( $server, $type, \$msg );
+	if ($type == Local::TCP::Calc::TYPE_START_WORK) { $msg = Local::TCP::Calc::pack_messages($messages); }
+	elsif ($type == Local::TCP::Calc::TYPE_CHECK_WORK) { $msg = Local::TCP::Calc::pack_id(@$messages[0]); }
 	
+	Local::TCP::Calc::input( $server, $type, \$msg );
+
 	if (Local::TCP::Calc::read_type($server) == Local::TCP::Calc::TYPE_CONN_OK) {
-		given ($type) {
-			when (Local::TCP::Calc::TYPE_START_WORK) { 
-				push @res, Local::TCP::Calc::read_id $server; 
-			}
-			when (Local::TCP::Calc::TYPE_CHECK_WORK) { 
-				my $status = $msg = Local::TCP::Calc::read_status $server;
-				given ($status) {
-					when ([Local::TCP::Calc::STATUS_NEW(), Local::TCP::Calc::STATUS_WORK()]) {
-						push @res, Local::TCP::Calc::read_time $server;
-					}
-					when ([Local::TCP::Calc::STATUS_DONE(), Local::TCP::Calc::STATUS_ERROR()]) {
-						push @res, Local::TCP::Calc::read_messages $server;
-					}
+		if ($type == Local::TCP::Calc::TYPE_START_WORK()) { 
+			push @res, Local::TCP::Calc::read_id $server; 
+		}
+		elsif ($type == Local::TCP::Calc::TYPE_CHECK_WORK()) { 
+			my $status = $msg = Local::TCP::Calc::read_status $server;
+			push @res, $status;
+
+			given ($status) {
+				when ([Local::TCP::Calc::STATUS_NEW(), Local::TCP::Calc::STATUS_WORK()]) {
+					push @res, Local::TCP::Calc::read_time $server;
+				}
+				when ([Local::TCP::Calc::STATUS_DONE(), Local::TCP::Calc::STATUS_ERROR()]) {
+					push @res, @{Local::TCP::Calc::read_messages $server};
 				}
 			}
 		}
