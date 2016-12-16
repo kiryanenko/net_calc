@@ -3,4 +3,4 @@ bin.my
 /Makefile
 /MYMETA.yml
 /MYMET.json
-results/*
+/results/*
