@@ -1,7 +1,10 @@
 package Local::TCP::Calc;
-use DDP;
+use Exporter 'import';
+our @EXPORT = qw(TYPE_START_WORK TYPE_CHECK_WORK TYPE_CONN_ERR TYPE_CONN_OK STATUS_NEW STATUS_WORK STATUS_DONE STATUS_ERROR);
 
 use strict;
+use warnings;
+use DDP;
 
 sub TYPE_START_WORK {1}
 sub TYPE_CHECK_WORK {2}

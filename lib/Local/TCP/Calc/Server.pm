@@ -76,13 +76,13 @@ sub start_server {
 				elsif (defined $child) {
 					close($server);
 					$client->autoflush(1);
-					Local::TCP::Calc::input( $client, Local::TCP::Calc::TYPE_CONN_OK() );
+					Local::TCP::Calc::input( $client, TYPE_CONN_OK );
 					my $result;
 					
 					# В каждом форке читаем сообщение от клиента, анализируем его тип (TYPE_START_WORK(), TYPE_CHECK_WORK()) 
 					# Не забываем проверять количество прочитанных/записанных байт из/в сеть
 					my $type = Local::TCP::Calc::read_type($client);
-					if ($type == Local::TCP::Calc::TYPE_START_WORK) {
+					if ($type == TYPE_START_WORK) {
 							# Если необходимо добавляем задание в очередь (проверяем получилось или нет)						
 							my @tasks = Local::TCP::Calc::read_messages($client);
 							my $id = $q->add(\@tasks);
@@ -90,7 +90,7 @@ sub start_server {
 							check_queue_workers($q);
 							$result = Local::TCP::Calc::pack_id($id);
 					}
-					elsif ($type == Local::TCP::Calc::TYPE_CHECK_WORK) {
+					elsif ($type == TYPE_CHECK_WORK) {
 						# Если пришли с проверкой статуса, получаем статус из очереди и отдаём клиенту
 						my $id = Local::TCP::Calc::read_id $client;
 
